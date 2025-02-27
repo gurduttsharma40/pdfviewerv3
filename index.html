@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive PDF Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container glass">
+        <h1>📄 Interactive PDF Viewer</h1>
+
+        <!-- Controls Panel -->
+        <div class="controls">
+            <label for="pdfUpload" class="upload-label">📂 Upload PDF</label>
+            <input type="file" id="pdfUpload" accept=".pdf" hidden>
+            
+            <input type="text" id="searchBox" placeholder="🔍 Search in PDF...">
+            <button id="searchBtn" class="primary">Search</button>
+            
+            <button id="toggle-theme" class="secondary">🌙 Dark Mode</button>
+            <button id="toggleResults">Show/Hide Results</button>
+
+        </div>
+
+        <!-- PDF Display -->
+        <div id="pdfContainer">
+            <canvas id="pdfCanvas"></canvas>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="pagination">
+            <button id="prevPage" class="secondary">⬅ Prev</button>
+            <span id="pageInfo">Page 1</span>
+            <button id="nextPage" class="secondary">Next ➡</button>
+        </div>
+
+        <!-- Search Results -->
+        <div id="results" class="glass">
+            <h3>🔎 Search Results</h3>
+            <ul id="resultsList"></ul>
+        </div>
+    </div>
+
+    <!-- Drag & Drop Upload -->
+    <div id="drop-area">
+        <p>📄 Drag & drop a PDF here or <span id="upload-btn">click to upload</span></p>
+        <input type="file" id="file-input" hidden>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
