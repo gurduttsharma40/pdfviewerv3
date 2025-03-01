@@ -1,4 +1,7 @@
 venv/
+extracted_images/
+temp_image-*.png
+page_*.png
+extracted_images/
 database.db
 database.json
-extracted_images/
