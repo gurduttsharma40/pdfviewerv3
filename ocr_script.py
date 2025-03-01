@@ -1,8 +1,24 @@
 import json
 import sys
 import os
+import sqlite3
+
 from pdf2image import convert_from_path
 from paddleocr import PaddleOCR
+
+DB_FILE = "database.db"
+
+def insert_text_data(file_name, file_path, page, text, bbox):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO pdf_data (file_name, file_path, page, text, bbox)
+        VALUES (?, ?, ?, ?, ?)
+    """, (file_name, file_path, page, text, json.dumps(bbox)))  # Store bbox as JSON
+    
+    conn.commit()
+    conn.close()
 
 # Ensure a PDF file is provided
 if len(sys.argv) < 2:

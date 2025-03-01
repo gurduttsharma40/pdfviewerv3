@@ -1,0 +1,22 @@
+searchBtn.addEventListener("click", () => {
+    let query = searchBox.value.trim();
+    if (!query) return;
+
+    fetch("http://localhost:5000/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+    })
+    .then(res => res.json())
+    .then(data => {
+        resultsList.innerHTML = "";
+        data.search_results.forEach(d => {
+            let li = document.createElement("li");
+            li.innerHTML = `<strong data-page="${d.page}" data-file="${d.file_path}">
+                                ${d.file_name} - Page ${d.page}:
+                            </strong> ${d.text}`;
+            resultsList.appendChild(li);
+        });
+    })
+    .catch(err => console.error("Search error:", err));
+});

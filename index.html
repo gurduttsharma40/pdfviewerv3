@@ -20,7 +20,8 @@
             
             <button id="toggle-theme" class="secondary">🌙 Dark Mode</button>
             <button id="toggleResults">Show/Hide Results</button>
-
+              
+            <span id="pdfCount">📂 PDFs Available: 0</span>             
         </div>
 
         <!-- PDF Display -->
@@ -47,6 +48,10 @@
         <p>📄 Drag & drop a PDF here or <span id="upload-btn">click to upload</span></p>
         <input type="file" id="file-input" hidden>
     </div>
+
+    <!-- Select PDF Dropdown -->
+    <label for="pdfSelect">📂 Choose a PDF:</label>
+    <select id="pdfSelect"></select>
 
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>

@@ -6,110 +6,101 @@ const cors = require("cors");
 const path = require("path");
 
 const server = express();
-server.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
+server.use(cors());
 server.use(express.json({ limit: "100mb" }));
 server.use(express.urlencoded({ limit: "100mb", extended: true }));
 
-const TEMP_PDF_PATH = path.join(__dirname, "temp.pdf");
-const OCR_SCRIPT = path.join(__dirname, "ocr_script.py");
+const PDF_STORAGE_DIR = path.join(__dirname, "pdf_storage");
+const PROCESS_SCRIPT = path.join(__dirname, "process_pdfs.py");
 const SEARCH_SCRIPT = path.join(__dirname, "search_script.py");
 
+if (!fs.existsSync(PDF_STORAGE_DIR)) fs.mkdirSync(PDF_STORAGE_DIR);
+
 let mainWindow;
-let pdfWindow;
 
 app.whenReady().then(() => {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-        },
+        webPreferences: { nodeIntegration: true, contextIsolation: false }
     });
-
     mainWindow.loadFile("index.html");
-}).catch(console.error); // ✅ Catch errors
-
-    // Open separate PDF viewer window
-    ipcMain.on("open-pdf-window", (event, filePath) => {
-    if (!pdfWindow) {
-        pdfWindow = new BrowserWindow({
-            width: 1000,
-            height: 700,
-            webPreferences: {
-                nodeIntegration: true,
-                contextIsolation: false,
-            },
-        });
-
-        pdfWindow.loadFile("pdfviewer.html");
-        pdfWindow.on("closed", () => (pdfWindow = null)); // ✅ Reset on close
-    }
-
-    pdfWindow.webContents.once("did-finish-load", () => {
-        pdfWindow.webContents.send("load-pdf", filePath);
-    });
-
-    pdfWindow.show(); // ✅ Bring window to front if already open
 });
-
 
 app.on("window-all-closed", () => app.quit());
 
-// ✅ Upload PDF & Process with OCR
-server.post("/upload", (req, res) => {
-    let pdfData = [];
-    req.on("data", chunk => pdfData.push(chunk));
-    req.on("end", () => {
-        fs.writeFileSync(TEMP_PDF_PATH, Buffer.concat(pdfData));
-        console.log(`📂 PDF Uploaded: ${TEMP_PDF_PATH}`); // ✅ Log uploaded file
+/** ✅ API: List all PDFs */
+server.get("/list_pdfs", (req, res) => {
+    if (!fs.existsSync(PDF_STORAGE_DIR)) {
+        return res.status(404).json({ error: "PDF storage directory not found." });
+    }
 
-        execFile("python", [OCR_SCRIPT, TEMP_PDF_PATH], (err, stdout, stderr) => {
-            if (err) {
-                console.error("OCR Error:", stderr);
-                return res.status(500).json({ error: stderr });
-            }
-            console.log("✅ OCR Output:", stdout);
-            res.json({ message: "PDF uploaded and processed successfully." });
-        });
-    });
+    const pdfs = fs.readdirSync(PDF_STORAGE_DIR)
+        .filter(file => file.endsWith(".pdf"))
+        .map(file => ({
+            fileName: file,
+            path: path.join(PDF_STORAGE_DIR, file)
+        }));
+
+    res.json(pdfs);
 });
 
+/** ✅ API: Upload & Process PDF */
 server.post("/search", (req, res) => {
     const query = req.body.query;
-    console.log(`🔍 Search Query: ${query}`); // ✅ Log search queries
+    console.log(`Search Query: ${query}`);
 
     execFile("python", [SEARCH_SCRIPT, query], (err, stdout, stderr) => {
         if (err) {
             console.error("Search Error:", stderr);
-            return res.status(500).json({ error: stderr });
+            return res.status(500).json({ error: "Search script execution failed." });
         }
 
         try {
             let parsedData = JSON.parse(stdout);
-            console.log("🔍 Search Results:", parsedData); // ✅ Log search results
+            
+            if (!parsedData || typeof parsedData !== "object") {
+                console.error("Invalid JSON from search script:", stdout);
+                return res.status(500).json({ error: "Invalid JSON structure received." });
+            }
+
             res.json(parsedData);
-        } catch {
-            console.error("Invalid JSON from search script:", stdout);
-            res.status(500).json({ error: "Invalid JSON output from search script" });
+        } catch (parseErr) {
+            console.error("JSON Parse Error:", stdout);
+            res.status(500).json({ error: "Failed to parse JSON from search script." });
         }
     });
 });
 
 
-// ✅ Search API
+/** ✅ API: Search PDFs */
 server.post("/search", (req, res) => {
     const query = req.body.query;
+    console.log(`🔍 Search Query: ${query}`);
+
     execFile("python", [SEARCH_SCRIPT, query], (err, stdout, stderr) => {
-        if (err) return res.status(500).json({ error: stderr });
+        if (err) {
+            console.error("❌ Search Script Execution Error:", stderr);
+            return res.status(500).json({ error: "Search script execution failed.", details: stderr });
+        }
 
         try {
+            console.log("🔍 Raw Python Output:", stdout); // ✅ Log the raw output for debugging
             let parsedData = JSON.parse(stdout);
+
+            if (!parsedData || typeof parsedData !== "object") {
+                console.error("❌ Invalid JSON from search script:", stdout);
+                return res.status(500).json({ error: "Invalid JSON structure received." });
+            }
+
             res.json(parsedData);
-        } catch {
-            res.status(500).json({ error: "Invalid JSON output from search script" });
+        } catch (parseErr) {
+            console.error("❌ JSON Parse Error:", stdout);
+            res.status(500).json({ error: "Failed to parse JSON from search script.", details: stdout });
         }
     });
 });
 
-server.listen(5000, "127.0.0.1", () => console.log("AI Server running on localhost:5000"));
+
+/** ✅ Start Express Server */
+server.listen(5000, "127.0.0.1", () => console.log("Server running on localhost:5000"));

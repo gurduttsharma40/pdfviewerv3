@@ -13,6 +13,7 @@ ipcRenderer.on("load-pdf", async (event, filePath) => {
         console.error("Error loading PDF:", error);
     }
 });
+pdfViewer.setTextLayerMode(1); // Enables text layer rendering
 
 async function renderPage(pageNumber) {
     if (!pdfDoc) return;
@@ -42,6 +43,24 @@ document.getElementById('fit-width').addEventListener('click', function () {
         canvas.style.height = 'auto';
     }
 });
+function highlightText(searchTerm) {
+    const textLayerElements = document.querySelectorAll(".textLayer span");
+
+    textLayerElements.forEach(span => {
+        if (span.textContent.toLowerCase().includes(searchTerm.toLowerCase())) {
+            span.style.backgroundColor = "yellow"; // Highlight found text
+            span.style.color = "black";
+        }
+    });
+}
+
+document.getElementById("searchButton").addEventListener("click", () => {
+    const searchTerm = document.getElementById("searchInput").value.trim();
+    if (searchTerm) {
+        highlightText(searchTerm);
+    }
+});
+
 
 // Dark Mode Toggle
 document.getElementById('toggle-theme').addEventListener('click', function () {
@@ -56,6 +75,19 @@ document.getElementById('toggle-theme').addEventListener('click', function () {
         this.innerText = "🌙 Dark Mode";
     }
 });
+window.addEventListener("message", (event) => {
+    if (event.data.type === "highlight") {
+        let query = event.data.query.toLowerCase();
+        let textLayerDivs = document.querySelectorAll(".textLayer div");
+
+        textLayerDivs.forEach((div) => {
+            if (div.textContent.toLowerCase().includes(query)) {
+                div.style.backgroundColor = "yellow";
+            }
+        });
+    }
+});
+
 
 // Smooth Scroll for Search Results
 const searchResults = document.getElementById('search-results');

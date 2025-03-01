@@ -2,129 +2,160 @@ document.addEventListener("DOMContentLoaded", () => {
     let pdfDoc = null,
         pageNum = 1,
         scale = 1.5,
-        canvas = document.getElementById("pdfCanvas"),
-        ctx = canvas.getContext("2d"),
-        highlights = [];
+        highlights = [],
+        currentPdfPath = "";
 
-    const fileInput = document.getElementById("pdfUpload"),
+    const pdfCanvas = document.getElementById("pdfCanvas"),
+        ctx = pdfCanvas.getContext("2d"),
         searchBox = document.getElementById("searchBox"),
         searchBtn = document.getElementById("searchBtn"),
-        prevPageBtn = document.getElementById("prevPage"),
-        nextPageBtn = document.getElementById("nextPage"),
-        pageInfo = document.getElementById("pageInfo"),
         resultsList = document.getElementById("resultsList"),
         resultsContainer = document.getElementById("results"),
-        dropArea = document.getElementById("drop-area"),
-        fileDropInput = document.getElementById("file-input");
+        pageInfo = document.getElementById("pageInfo"),
+        prevPageBtn = document.getElementById("prevPage"),
+        nextPageBtn = document.getElementById("nextPage");
 
-    // 📌 Load PDF
-    function loadPDF(url) {
-        pdfjsLib.getDocument(url).promise.then((pdf) => {
-            pdfDoc = pdf;
-            renderPage(pageNum);
-        });
-    }
-
-    function renderPage(num) {
-        if (!pdfDoc) return;
-
-        pdfDoc.getPage(num).then((page) => {
-            const viewport = page.getViewport({ scale });
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const renderCtx = { canvasContext: ctx, viewport };
-
-            page.render(renderCtx).promise.then(() => {
-                drawHighlights();
-            });
-
-            pageInfo.textContent = `Page ${num} of ${pdfDoc.numPages}`;
-        });
-    }
-
-    // 📌 Draw Highlights
-    function drawHighlights() {
-        if (!ctx || highlights.length === 0) return;
-        ctx.fillStyle = "rgba(255, 255, 0, 0.5)";
-        highlights.forEach(h => {
-            let [x0, y0, x1, y1] = h.map(coord => coord * scale); // Adjust bbox with scale
-            ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-        });
-    }
-
-    // 📌 Handle Previous & Next Page
-    prevPageBtn.addEventListener("click", () => {
-        if (pageNum <= 1) return;
-        pageNum--;
-        renderPage(pageNum);
-    });
-
-    nextPageBtn.addEventListener("click", () => {
-        if (pageNum >= pdfDoc.numPages) return;
-        pageNum++;
-        renderPage(pageNum);
-    });
-
-    // 📌 Handle Search
+    /** 🔹 Handle Search */
     searchBtn.addEventListener("click", () => {
-        const term = searchBox.value.trim();
-        if (!term || !pdfDoc) return;
+        let query = searchBox.value.trim();
+        if (!query) return;
 
         fetch("http://localhost:5000/search", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: term })
+            body: JSON.stringify({ query })
         })
         .then(res => res.json())
         .then(data => {
+            console.log("🔍 Search Response:", data);
+
             resultsList.innerHTML = "";
             resultsContainer.style.display = "block";
 
-            let searchResults = [...(data.pdf_results || []), ...(data.ocr_results || [])];
+            if (!data || !Array.isArray(data.search_results)) {
+                console.error("❌ Invalid search response:", data);
+                resultsList.innerHTML = `<li>Error: Invalid search response</li>`;
+                return;
+            }
 
-            if (searchResults.length === 0) {
+            if (data.search_results.length === 0) {
                 resultsList.innerHTML = "<li>No results found</li>";
                 return;
             }
 
-            searchResults.forEach(d => {
-                let li = document.createElement("li");
-                li.innerHTML = `<strong class="result-page" data-page="${d.page}" data-bbox='${JSON.stringify(d.bbox)}'>
-                                    Page ${d.page}:
-                                </strong> ${d.text.replace(term, `<span class="highlight">${term}</span>`)}`;
-                resultsList.appendChild(li);
+            let groupedResults = {};
+            data.search_results.forEach(result => {
+                let { file_name, file_path, page, text, bbox } = result;
+
+                if (!groupedResults[file_path]) {
+                    groupedResults[file_path] = {
+                        file_name,
+                        file_path,
+                        results: []
+                    };
+                }
+
+                let highlightedText = text.replace(new RegExp(query, "gi"), match => `<span class="highlight">${match}</span>`);
+
+                groupedResults[file_path].results.push({ page, text: highlightedText, bbox });
             });
 
-            // 📌 Attach click event to search results
-            document.querySelectorAll(".result-page").forEach(item => {
-                item.addEventListener("click", handleSearchClick);
+            Object.values(groupedResults).forEach(pdf => {
+                let pdfItem = document.createElement("li");
+                pdfItem.innerHTML = `<strong>📄 ${pdf.file_name}</strong>`;
+                pdfItem.style.fontWeight = "bold";
+                resultsList.appendChild(pdfItem);
+
+                pdf.results.forEach(result => {
+                    let resultItem = document.createElement("li");
+                    resultItem.innerHTML = `<strong class="result-page" 
+                                            data-page="${result.page}" 
+                                            data-pdf="${pdf.file_path}" 
+                                            data-bbox='${JSON.stringify(result.bbox)}'>
+                                            Page ${result.page}:
+                                        </strong> ${result.text}`;
+                    resultsList.appendChild(resultItem);
+                });
             });
+
+            /** 📌 Click Event to Load Correct PDF & Page */
+            document.querySelectorAll(".result-page").forEach(item => {
+                item.addEventListener("click", (e) => {
+                    let targetPage = parseInt(e.target.getAttribute("data-page"));
+                    let bboxAttr = e.target.getAttribute("data-bbox");
+                    let pdfPath = e.target.getAttribute("data-pdf");
+
+                    if (!pdfPath) {
+                        console.error("❌ PDF path is missing in search result!");
+                        return;
+                    }
+
+                    let bbox = [];
+                    try {
+                        bbox = bboxAttr ? JSON.parse(bboxAttr) : [];
+                    } catch (error) {
+                        console.error("❌ Invalid bbox data:", bboxAttr, error);
+                    }
+
+                    if (!isNaN(targetPage)) {
+                        loadPDF(pdfPath, targetPage, bbox);
+                    }
+                });
+            });
+
         })
-        .catch(err => console.error("Search error:", err));
+        .catch(err => console.error("❌ Search error:", err));
     });
 
-    // 📌 Click Handler for Search Results
-    function handleSearchClick(e) {
-        let targetPage = parseInt(e.target.getAttribute("data-page"));
-        let bbox = JSON.parse(e.target.getAttribute("data-bbox"));
+    /** 🔹 Load PDF and Apply Highlights */
+    function loadPDF(pdfPath, targetPage = 1, newHighlights = []) {
+        if (pdfPath !== currentPdfPath) {
+            pdfjsLib.getDocument(pdfPath).promise.then(pdf => {
+                pdfDoc = pdf;
+                currentPdfPath = pdfPath;
+                highlights = newHighlights;
+                console.log(`✅ Loaded PDF: ${pdfPath} | Total Pages: ${pdfDoc.numPages}`);
 
-        if (!isNaN(targetPage)) {
-            jumpToPage(targetPage, bbox);
+                if (targetPage > pdfDoc.numPages) {
+                    console.error(`❌ Page ${targetPage} does not exist in ${pdfPath}`);
+                    return;
+                }
+
+                renderPage(targetPage);
+            }).catch(err => console.error("❌ Error loading PDF:", err));
+        } else {
+            highlights = newHighlights;
+            renderPage(targetPage);
         }
     }
 
-    function jumpToPage(page, bbox) {
-        pageNum = page;
-        highlights = bbox ? [bbox] : [];
-        renderPage(pageNum);
+    /** 🔹 Render Page & Apply Highlights */
+    function renderPage(num) {
+        if (!pdfDoc) return;
+
+        pdfDoc.getPage(num).then(page => {
+            let viewport = page.getViewport({ scale });
+            pdfCanvas.width = viewport.width;
+            pdfCanvas.height = viewport.height;
+
+            let renderCtx = { canvasContext: ctx, viewport };
+            page.render(renderCtx).promise.then(() => {
+                drawHighlights(viewport);
+            });
+
+            pageInfo.textContent = `Page ${num} of ${pdfDoc.numPages}`;
+            pageNum = num;
+        }).catch(err => console.error("❌ Invalid page request:", err));
     }
 
-    // 📌 Drag & Drop Support
-    dropArea.addEventListener("click", () => fileDropInput.click());
+    /** 🔹 Draw Highlights on the PDF Canvas */
+    function drawHighlights(viewport) {
+        if (!ctx || highlights.length === 0) return;
 
-    // 📌 File Upload
-    fileInput.addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (file) loadPDF(URL.createObjectURL(file));
-    });
+        ctx.fillStyle = "rgba(255, 255, 0, 0.5)";
+        highlights.forEach(h => {
+            let [x0, y0, x1, y1] = h.map(coord => coord * viewport.scale);
+            ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+        });
+    }
 });
