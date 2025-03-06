@@ -11,11 +11,46 @@ document.addEventListener("DOMContentLoaded", () => {
         nextPageBtn = document.getElementById("nextPage"),
         resultsList = document.getElementById("resultsList");
 
-    let pdfDoc = null, pageNum = 1, scale = 1.5, currentRenderTask = null, searchResults = {};
+    let pdfDocs = [], // Array to hold multiple PDF documents
+        mergedPages = [], // Flattened list of all pages across PDFs
+        pageNum = 1,
+        scale = 1.5,
+        currentRenderTask = null,
+        searchResults = {};
 
-    /** ✅ Render PDF Page with Highlights */
+    /** ✅ Handle PDF Upload */
+    pdfUpload.addEventListener("change", async (e) => {
+        let files = Array.from(e.target.files);
+        for (let file of files) {
+            if (file.type === "application/pdf") {
+                let url = URL.createObjectURL(file);
+                try {
+                    let newPdf = await pdfjsLib.getDocument(url).promise;
+                    pdfDocs.push(newPdf);
+                    console.log(`📄 PDF Loaded: ${file.name}`);
+                } catch (err) {
+                    console.error("❌ Error loading PDF:", err);
+                }
+            }
+        }
+        mergePdfs();
+    });
+
+    /** ✅ Merge All PDFs into One Continuous Document */
+    async function mergePdfs() {
+        mergedPages = [];
+        for (let pdf of pdfDocs) {
+            for (let i = 1; i <= pdf.numPages; i++) {
+                mergedPages.push({ pdf, pageIndex: i });
+            }
+        }
+        console.log(`🔗 Total Pages Merged: ${mergedPages.length}`);
+        renderPage(1);
+    }
+
+    /** ✅ Render a Specific Page */
     async function renderPage(num) {
-        if (!pdfDoc) {
+        if (!mergedPages.length) {
             console.error("❌ No PDF loaded!");
             return;
         }
@@ -24,11 +59,13 @@ document.addEventListener("DOMContentLoaded", () => {
             currentRenderTask.cancel();
         }
 
+        let { pdf, pageIndex } = mergedPages[num - 1];
+
         try {
-            const page = await pdfDoc.getPage(num);
+            const page = await pdf.getPage(pageIndex);
             let viewport = page.getViewport({ scale });
 
-            // Clear canvas before rendering a new page
+            // Resize canvas
             pdfCanvas.width = viewport.width;
             pdfCanvas.height = viewport.height;
             ctx.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
@@ -37,10 +74,10 @@ document.addEventListener("DOMContentLoaded", () => {
             currentRenderTask = page.render(renderCtx);
 
             await currentRenderTask.promise;
-            pageInfo.textContent = `Page ${num} of ${pdfDoc.numPages}`;
+            pageInfo.textContent = `Page ${num} of ${mergedPages.length}`;
             pageNum = num;
 
-            // ✅ Apply highlights if search results exist for this page
+            // ✅ Apply highlights if search results exist
             if (searchResults[num]) {
                 drawHighlights(searchResults[num], viewport);
             }
@@ -49,32 +86,30 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    /** ✅ Load PDF */
-    pdfUpload.addEventListener("change", (e) => {
-        let file = e.target.files[0];
-        if (file && file.type === "application/pdf") {
-            let url = URL.createObjectURL(file);
-            pdfjsLib.getDocument(url).promise.then(pdf => {
-                pdfDoc = pdf;
-                console.log("✅ PDF Loaded");
-                searchResults = {}; // Clear previous search results
-                renderPage(1);
-            }).catch(err => console.error("❌ Error loading PDF:", err));
-        }
-    });
+    /** ✅ Draw Search Highlights */
+    function drawHighlights(highlights, viewport) {
+        ctx.fillStyle = "rgba(255, 255, 0, 0.5)";
+        highlights.forEach(({ x, y, width, height }) => {
+            ctx.fillRect(
+                x * viewport.scale,
+                pdfCanvas.height - y * viewport.scale - height * viewport.scale,
+                width * viewport.scale,
+                height * viewport.scale
+            );
+        });
+    }
 
-    /** ✅ Search Handler */
+    /** ✅ Search Across All PDFs */
     searchBtn.addEventListener("click", async () => {
         const query = searchBox.value.trim().toLowerCase();
-        if (!query || !pdfDoc) return;
+        if (!query || !mergedPages.length) return;
 
         try {
             searchResults = await searchTextInPDF(query);
             console.log("🔍 Found Matches:", searchResults);
-
             displaySearchResults(searchResults);
 
-            // ✅ Jump to the first page with a match
+            // ✅ Jump to the first match
             let firstPageWithMatch = Object.keys(searchResults)[0];
             if (firstPageWithMatch) {
                 goToPage(parseInt(firstPageWithMatch));
@@ -84,29 +119,27 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    /** ✅ Search Text in the Entire PDF and Store Bounding Box Data */
+    /** ✅ Search and Store Bounding Box Data */
     async function searchTextInPDF(query) {
-        let results = {}; // Store results per page
+        let results = {};
 
-        for (let i = 1; i <= pdfDoc.numPages; i++) {
-            const page = await pdfDoc.getPage(i);
+        for (let i = 0; i < mergedPages.length; i++) {
+            const { pdf, pageIndex } = mergedPages[i];
+            const page = await pdf.getPage(pageIndex);
             const textContent = await page.getTextContent();
             let viewport = page.getViewport({ scale });
 
             textContent.items.forEach((item) => {
                 if (item.str.toLowerCase().includes(query)) {
-                    if (!results[i]) results[i] = []; // Store per page
+                    if (!results[i + 1]) results[i + 1] = [];
 
                     let { transform, width, height } = item;
-                    let x = transform[4]; // No need for scale here
-                    let y = transform[5];
-
-                    results[i].push({
+                    results[i + 1].push({
                         text: item.str,
-                        x: x,
-                        y: y,
+                        x: transform[4],
+                        y: transform[5],
                         width: width,
-                        height: height,
+                        height: height
                     });
                 }
             });
@@ -115,9 +148,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return results;
     }
 
-    /** ✅ Display Search Results in the UI */
+    /** ✅ Display Search Results */
     function displaySearchResults(results) {
-        resultsList.innerHTML = ""; // Clear previous results
+        resultsList.innerHTML = "";
 
         Object.keys(results).forEach((pageNum) => {
             results[pageNum].forEach((result) => {
@@ -134,38 +167,24 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    /** ✅ Function to go to a specific page */
+    /** ✅ Go to a Specific Page */
     function goToPage(num) {
-        if (num > 0 && num <= pdfDoc.numPages) {
+        if (num > 0 && num <= mergedPages.length) {
             pageNum = num;
             renderPage(num);
         }
     }
 
-    /** ✅ Draw Highlights on the PDF Canvas */
-    function drawHighlights(highlights, viewport) {
-        ctx.fillStyle = "rgba(255, 255, 0, 0.5)"; // Yellow transparent highlight
-
-        highlights.forEach(({ x, y, width, height }) => {
-            let scaledX = x * viewport.scale;
-            let scaledY = (pdfCanvas.height - (y * viewport.scale)) - (height * viewport.scale);
-            let scaledWidth = width * viewport.scale;
-            let scaledHeight = height * viewport.scale;
-
-            ctx.fillRect(scaledX, scaledY, scaledWidth, scaledHeight);
-        });
-    }
-
     /** ✅ Page Navigation */
-    prevPageBtn.addEventListener("click", () => { 
+    prevPageBtn.addEventListener("click", () => {
         if (pageNum > 1) {
-            renderPage(--pageNum); 
+            renderPage(--pageNum);
         }
     });
 
-    nextPageBtn.addEventListener("click", () => { 
-        if (pageNum < pdfDoc.numPages) {
-            renderPage(++pageNum); 
+    nextPageBtn.addEventListener("click", () => {
+        if (pageNum < mergedPages.length) {
+            renderPage(++pageNum);
         }
     });
 });
