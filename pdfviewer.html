@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Viewer</title>
-    <script src="pdfviewer.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <canvas id="pdfCanvas"></canvas>
+    <div id="pdfViewerContainer">
+        <canvas id="pdfCanvas"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>
+    <script src="pdfviewer.js"></script>
 </body>
 </html>
